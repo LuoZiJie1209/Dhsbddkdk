@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>樹枝導線測地計算器 XYH 已知點升級版</title>
+<style>
+:root{--bg:#f5f7fb;--card:#fff;--line:#d8dee9;--text:#1f2937;--muted:#6b7280;--primary:#2563eb;--danger:#dc2626;--soft:#eef2ff;}
+*{box-sizing:border-box}body{font-family:Arial,"Microsoft JhengHei";padding:0;max-width:1280px;margin:auto;background:var(--bg);color:var(--text)}
+h2{position:sticky;top:0;z-index:8;margin:0;padding:16px 18px;background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+h3{margin:0 0 12px;font-size:19px}.box{border:1px solid var(--line);border-radius:14px;padding:14px;margin:14px 16px;background:var(--card);box-shadow:0 2px 12px rgba(15,23,42,.05)}
+input,select,button{padding:8px 10px;margin:4px;font-size:14px;border-radius:9px}input,select{border:1px solid #cbd5e1;background:#fff}button{cursor:pointer;border:0;background:#e5e7eb;font-weight:700}button:hover{filter:brightness(.96)}
+button[onclick="calcAll()"],button[onclick="addObsRow()"],button[onclick="addKnownPoint()"],button[onclick="setScpOnly()"],button[onclick="closureCheck()"]{background:var(--primary);color:#fff}button[onclick="clearObs()"],button[onclick="deleteKnownPoint()"]{background:#fee2e2;color:#991b1b}
+table{width:calc(100% - 32px);margin:12px 16px;border-collapse:collapse;font-size:13px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(15,23,42,.04)}th,td{border:1px solid #e5e7eb;padding:7px;text-align:center;white-space:nowrap}th{background:#f1f5f9;color:#334155}.small{width:90px}.mid{width:130px}.wide{width:180px}
+#sketchWrap{border:1px solid #cbd5e1;background:#fff;width:100%;height:560px;overflow:auto;border-radius:12px}svg{background:#fbfdff;min-width:1000px;min-height:720px}.labelBox{font-size:13px;paint-order:stroke;stroke:white;stroke-width:4px;fill:#111827;font-weight:700}.baseLabel{font-size:12px;paint-order:stroke;stroke:white;stroke-width:4px;fill:#2563eb;font-weight:700}.auxLabel{font-size:12px;paint-order:stroke;stroke:white;stroke-width:4px;fill:#64748b;font-weight:700}.hint{color:var(--muted);font-size:13px;line-height:1.7}.known{background:#f0fdf4}.calcpt{background:#fff}
+@media(max-width:800px){body{padding:0}.box{margin:10px;padding:12px;overflow-x:auto}input,select,button{font-size:16px;max-width:100%}table{display:block;overflow:auto;width:calc(100% - 20px);margin:10px}h2{font-size:20px}}
+</style>
+</head>
+
+<body>
+<h2>樹枝導線測地計算器 XYH（已知點升級版）</h2>
+
+<div class="box">
+<h3>① 起始點 Scp</h3>
+X:<input id="scpX" class="mid" value="0">
+Y:<input id="scpY" class="mid" value="0">
+H:<input id="scpH" class="mid" value="0">
+<button onclick="setScpOnly()">設定 Scp</button>
+<div class="hint">Scp 永遠是起始基準點。Scp 出發輸入角度時，系統視為方位角。</div>
+</div>
+
+<div class="box">
+<h3>② 已知點座標管理</h3>
+<div class="hint">
+這裡可以先建立已有座標的點，例如 1、M001、B1-1。<br>
+建立後，該點可被選為：歸零點、起點、終點。<br>
+例：已知 Scp 與 1 座標，新增測線時選「歸零點 Scp、起點 1、終點 2」，系統會自動反算 1→Scp 方位角，再用水平角算 1→2 方位角。
+</div>
+點名:<input id="knownName" class="mid" placeholder="例如 1、B1-1">
+X:<input id="knownX" class="mid">
+Y:<input id="knownY" class="mid">
+H:<input id="knownH" class="mid">
+<button onclick="addKnownPoint()">新增 / 更新已知點</button>
+<button onclick="deleteKnownPoint()">刪除已知點</button>
+<div id="pointNameList" class="hint"></div>
+</div>
+
+<div class="box">
+<h3>③ 測線 / 基線</h3>
+<div class="hint">
+類型「測線」：會計算終點座標。<br>
+類型「基線」：只建立一條方向，可作為後續歸零方向，不改變任何點位座標。<br>
+角度輸入：小數點後 4 位視為度分秒，例如 123.4512 = 123°45′12″；其他數字視為密位，例如 1333.23 = 密位。
+</div>
+<div id="obsRows"></div>
+<button onclick="addObsRow()">新增一筆</button>
+<button onclick="calcAll()">計算全部</button>
+<button onclick="clearObs()">清空測線</button>
+</div>
+
+<h3>點位成果</h3>
+<table>
+<thead>
+<tr>
+<th>點名</th><th>來源</th><th>X</th><th>Y</th><th>H</th><th>進入方位角(密位)</th><th>進入方位角(DMS)</th>
+</tr>
+</thead>
+<tbody id="pointTable"></tbody>
+</table>
+
+<h3>測線明細</h3>
+<table>
+<thead>
+<tr>
+<th>類型</th><th>歸零點</th><th>起點</th><th>終點</th><th>輸入角</th><th>實際方位角(密位)</th>
+<th>實際方位角(DMS)</th><th>高低角</th><th>D</th><th>ΔX</th><th>ΔY</th><th>ΔH</th><th>水平距離</th><th>反推D</th>
+</tr>
+</thead>
+<tbody id="lineTable"></tbody>
+</table>
+
+<div class="box">
+<h3>④ 草圖</h3>
+<button onclick="zoomSketch(1.25)">放大</button>
+<button onclick="zoomSketch(0.8)">縮小</button>
+<button onclick="resetZoom()">重置</button>
+<div id="sketchWrap">
+<svg id="sketch" width="1200" height="800"></svg>
+</div>
+</div>
+
+<div class="box">
+<h3>⑤ 閉塞回歸檢查（只算 X,Y，不含 H）</h3>
+<div class="hint">全長只計算 Scp 到閉塞點的路徑，不會把其他分支全部加進去。</div>
+閉塞點：<select id="closurePoint"></select><br>
+實際X:<input id="trueX" class="mid">
+實際Y:<input id="trueY" class="mid">
+<button onclick="closureCheck()">計算閉塞</button>
+<div id="closureResult"></div>
+</div>
+
+<script>
+const FULL = 6400;
+const HALF = 3200;
+
+let pointNames = ["Scp"];
+let knownPoints = {};
+let points = {};
+let lines = [];
+let dirMap = {};
+let parentMap = {};
+let flatMap = {};
+let sourceMap = {};
+let sketchZoom = 1;
+let auxLines = [];
+
+function key(a,b){ return a + "->" + b; }
+
+function getScpInput(){
+  let x = Number(document.getElementById("scpX").value);
+  let y = Number(document.getElementById("scpY").value);
+  let h = Number(document.getElementById("scpH").value);
+  if(isNaN(x)||isNaN(y)||isNaN(h)) return null;
+  return {x:x,y:y,h:h,az:null};
+}
+
+function rebuildBasePoints(){
+  let scp = getScpInput();
+  if(!scp){ alert("Scp座標錯誤"); return false; }
+
+  points = {};
+  sourceMap = {};
+  points["Scp"] = scp;
+  sourceMap["Scp"] = "Scp";
+
+  Object.keys(knownPoints).forEach(function(n){
+    if(n === "Scp") return;
+    points[n] = {x:knownPoints[n].x, y:knownPoints[n].y, h:knownPoints[n].h, az:null};
+    sourceMap[n] = "已知";
+  });
+
+  if(!pointNames.includes("Scp")) pointNames.unshift("Scp");
+  Object.keys(knownPoints).forEach(function(n){ if(!pointNames.includes(n)) pointNames.push(n); });
+  return true;
+}
+
+function setScpOnly(){
+  if(!rebuildBasePoints()) return;
+  dirMap = {};
+  parentMap = {};
+  flatMap = {};
+  lines = [];
+  refreshSelects();
+  renderTables();
+  drawSketch();
+}
+
+function addKnownPoint(){
+  let n = document.getElementById("knownName").value.trim();
+  let x = Number(document.getElementById("knownX").value);
+  let y = Number(document.getElementById("knownY").value);
+  let h = Number(document.getElementById("knownH").value);
+
+  if(!n){ alert("請輸入點名"); return; }
+  if(n === "Scp"){ alert("Scp 請在起始點區塊設定，不要在已知點新增"); return; }
+  if(isNaN(x)||isNaN(y)||isNaN(h)){ alert("已知點座標錯誤"); return; }
+
+  knownPoints[n] = {x:x,y:y,h:h};
+  if(!pointNames.includes(n)) pointNames.push(n);
+
+  document.getElementById("knownName").value = "";
+  document.getElementById("knownX").value = "";
+  document.getElementById("knownY").value = "";
+  document.getElementById("knownH").value = "";
+
+  rebuildBasePoints();
+  refreshSelects();
+  renderTables();
+  drawSketch();
+}
+
+function deleteKnownPoint(){
+  let n = document.getElementById("knownName").value.trim();
+  if(!n){ alert("請在點名欄輸入要刪除的已知點"); return; }
+  if(n === "Scp"){ alert("Scp 不能刪除"); return; }
+  if(!knownPoints[n]){ alert("找不到這個已知點"); return; }
+  if(!confirm("確定刪除已知點「" + n + "」嗎？")) return;
+
+  delete knownPoints[n];
+  pointNames = pointNames.filter(function(p){ return p !== n; });
+  rebuildBasePoints();
+  refreshSelects();
+  renderTables();
+  drawSketch();
+}
+
+function refreshSelects(){
+  let knownList = Object.keys(knownPoints).map(function(n){
+    let p = knownPoints[n];
+    return n + "(" + p.x + ", " + p.y + ", " + p.h + ")";
+  });
+  document.getElementById("pointNameList").innerText =
+    "目前點名：" + pointNames.join("、") + (knownList.length ? "\n已知點：" + knownList.join("；") : "");
+
+  document.querySelectorAll("select.pointSelect").forEach(function(sel){
+    let old = sel.value;
+    sel.innerHTML = pointNames.map(function(p){
+      return "<option value='"+escapeHtml(p)+"'>"+escapeHtml(p)+"</option>";
+    }).join("");
+    if(pointNames.includes(old)) sel.value = old;
+  });
+
+  let cp = document.getElementById("closurePoint");
+  let old = cp.value;
+  cp.innerHTML = pointNames.map(function(p){
+    return "<option value='"+escapeHtml(p)+"'>"+escapeHtml(p)+"</option>";
+  }).join("");
+  if(pointNames.includes(old)) cp.value = old;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;").replace(/\"/g,"&quot;");
+}
+
+function addObsRow(){
+  let div = document.createElement("div");
+  div.className = "box";
+  div.innerHTML =
+  '類型:<select class="type"><option value="line">測線</option><option value="base">基線</option></select>' +
+  ' 歸零點:<select class="zero pointSelect"></select>' +
+  ' 起點:<select class="from pointSelect"></select>' +
+  ' 終點:<select class="to pointSelect"></select>' +
+  ' 角度:<input class="angle mid" placeholder="密位或度分秒">' +
+  ' 高低角:<input class="va mid" placeholder="測線才填">' +
+  ' D:<input class="dist small" placeholder="測線才填">' +
+  '<button onclick="this.parentNode.remove()">刪除</button>';
+  document.getElementById("obsRows").appendChild(div);
+  refreshSelects();
+}
+
+function clearObs(){
+  if(!confirm("確定要清空所有測線嗎？此動作無法復原。\n已知點會保留。")) return;
+  document.getElementById("obsRows").innerHTML="";
+  lines=[];
+  dirMap={};
+  parentMap={};
+  flatMap={};
+  rebuildBasePoints();
+  refreshSelects();
+  renderTables();
+  drawSketch();
+}
+
+function normMil(m){
+  m = m % FULL;
+  if(m < 0) m += FULL;
+  return m;
+}
+
+function milToDeg(m){ return m / 6400 * 360; }
+function degToMil(d){ return d / 360 * 6400; }
+
+function dmsToDeg(str){
+  let p = String(str).trim().split(".");
+  let d = Number(p[0]);
+  let f = (p[1] || "").padEnd(4,"0");
+  let m = Number(f.slice(0,2));
+  let s = Number(f.slice(2,4));
+  if(isNaN(d)||isNaN(m)||isNaN(s)) return null;
+  if(d>=360||m>=60||s>=60) return null;
+  return d + m/60 + s/3600;
+}
+
+function parseAngleMil(str){
+  str = String(str).trim();
+  if(str==="") return null;
+  let n = Number(str);
+  if(isNaN(n)) return null;
+
+  let p = str.split(".");
+  if(p.length===2 && p[1].length===4){
+    let deg = dmsToDeg(str);
+    if(deg===null) return null;
+    return normMil(degToMil(deg));
+  }
+  return normMil(n);
+}
+
+function degToDMS(deg){
+  deg = ((deg%360)+360)%360;
+  let d = Math.floor(deg);
+  let mf = (deg-d)*60;
+  let m = Math.floor(mf);
+  let s = (mf-m)*60;
+  return d+"°"+String(m).padStart(2,"0")+"′"+s.toFixed(5)+"″";
+}
+
+function coordAzMil(fromName, zeroName){
+  let a = points[zeroName];
+  let b = points[fromName];
+  if(!a || !b) return null;
+  let dx = a.x - b.x;
+  let dy = a.y - b.y;
+  let deg = Math.atan2(dx, dy) * 180 / Math.PI;
+  if(deg < 0) deg += 360;
+  return degToMil(deg);
+}
+
+function getZeroAzMil(from, zero){
+  if(dirMap[key(from, zero)] !== undefined){
+    return dirMap[key(from, zero)];
+  }
+  return coordAzMil(from, zero);
+}
+
+function calcAzimuth(from, zero, inputMil){
+  if(from === "Scp"){
+    return normMil(inputMil);
+  }
+
+  let zeroAz = getZeroAzMil(from, zero);
+  if(zeroAz === null) return null;
+
+  // 以「起點 → 歸零點」為0方向，再加水平角
+  // 若歸零點與起點都有座標，草圖加畫一條已知點歸零輔助線，不影響計算與閉塞全長。
+  if(points[from] && points[zero] && from !== zero && dirMap[key(from, zero)] === undefined){
+    auxLines.push({from: zero, to: from});
+  }
+  return normMil(zeroAz + inputMil);
+}
+
+function calcAll(){
+  if(!rebuildBasePoints()) return;
+  lines = [];
+  dirMap = {};
+  parentMap = {};
+  flatMap = {};
+  auxLines = [];
+
+  let rows = document.getElementById("obsRows").children;
+
+  for(let i=0;i<rows.length;i++){
+    let type = rows[i].querySelector(".type").value;
+    let zero = rows[i].querySelector(".zero").value;
+    let from = rows[i].querySelector(".from").value;
+    let to = rows[i].querySelector(".to").value;
+    let angleText = rows[i].querySelector(".angle").value.trim();
+    let vaText = rows[i].querySelector(".va").value.trim();
+    let distText = rows[i].querySelector(".dist").value.trim();
+
+    if(!points[from]){
+      alert("第"+(i+1)+"筆：起點 "+from+" 尚未有座標。請先新增已知點，或先用前面測線算出該點。");
+      return;
+    }
+
+    if(!pointNames.includes(to)) pointNames.push(to);
+
+    let inputMil = parseAngleMil(angleText);
+    if(inputMil===null){alert("第"+(i+1)+"筆角度錯誤");return;}
+
+    let azMil = calcAzimuth(from, zero, inputMil);
+    if(azMil===null){alert("第"+(i+1)+"筆無法取得歸零方向。請確認歸零點有座標，或基線已在前面建立。");return;}
+
+    dirMap[key(from,to)] = azMil;
+    dirMap[key(to,from)] = normMil(azMil + HALF);
+
+    if(type === "base"){
+      lines.push({type:"基線",zero:zero,from:from,to:to,angleText:angleText,azMil:azMil,
+        vaText:"-",D:null,dx:0,dy:0,dh:0,flat:0,backD:0});
+      continue;
+    }
+
+    let vaDeg = dmsToDeg(vaText);
+    if(vaDeg===null){alert("第"+(i+1)+"筆高低角錯誤");return;}
+
+    let D = Number(distText);
+    if(isNaN(D)){alert("第"+(i+1)+"筆D錯誤");return;}
+
+    // 保留原本已驗證穩定的 H 計算核心：tan 高精度版
+    let phi = 90 - vaDeg;
+    let t = Math.tan(phi * Math.PI / 180);
+    let flat = D / Math.sqrt(1 + t*t);
+    let dh = flat * t;
+
+    let azDeg = milToDeg(azMil);
+    let rad = azDeg * Math.PI / 180;
+
+    let dx = flat * Math.sin(rad);
+    let dy = flat * Math.cos(rad);
+
+    let base = points[from];
+
+    points[to] = {
+      x: base.x + dx,
+      y: base.y + dy,
+      h: base.h + dh,
+      az: azMil
+    };
+    sourceMap[to] = "計算";
+
+    parentMap[to] = from;
+    flatMap[to] = flat;
+
+    let backD = Math.hypot(dx,dy,dh);
+
+    lines.push({type:"測線",zero:zero,from:from,to:to,angleText:angleText,azMil:azMil,
+      vaText:vaText,D:D,dx:dx,dy:dy,dh:dh,flat:flat,backD:backD});
+  }
+
+  refreshSelects();
+  renderTables();
+  drawSketch();
+}
+
+function renderTables(){
+  let pt = document.getElementById("pointTable");
+  pt.innerHTML = "";
+
+  Object.keys(points).forEach(function(name){
+    let p = points[name];
+    let src = sourceMap[name] || "計算";
+    let trClass = src === "已知" ? "known" : "calcpt";
+    pt.innerHTML +=
+    "<tr class='"+trClass+"'><td>"+escapeHtml(name)+"</td><td>"+src+"</td><td>"+p.x.toFixed(4)+"</td><td>"+p.y.toFixed(4)+"</td><td>"+p.h.toFixed(6)+"</td><td>"+
+    (p.az===null?"-":p.az.toFixed(8))+"</td><td>"+
+    (p.az===null?"-":degToDMS(milToDeg(p.az)))+"</td></tr>";
+  });
+
+  let lt = document.getElementById("lineTable");
+  lt.innerHTML = "";
+  lines.forEach(function(l){
+    lt.innerHTML +=
+    "<tr><td>"+l.type+"</td><td>"+escapeHtml(l.zero)+"</td><td>"+escapeHtml(l.from)+"</td><td>"+escapeHtml(l.to)+"</td><td>"+escapeHtml(l.angleText)+"</td><td>"+
+    l.azMil.toFixed(8)+"</td><td>"+degToDMS(milToDeg(l.azMil))+"</td><td>"+escapeHtml(l.vaText)+"</td><td>"+(l.D===null?"-":l.D.toFixed(2))+"</td><td>"+
+    l.dx.toFixed(4)+"</td><td>"+l.dy.toFixed(4)+"</td><td>"+l.dh.toFixed(6)+"</td><td>"+
+    l.flat.toFixed(4)+"</td><td>"+l.backD.toFixed(10)+"</td></tr>";
+  });
+}
+
+function makeSVG(tag){
+  return document.createElementNS("http://www.w3.org/2000/svg", tag);
+}
+
+function addArrowDef(svg){
+  let defs = makeSVG("defs");
+  defs.innerHTML =
+  '<marker id="arrowBlack" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">' +
+  '<path d="M0,0 L0,6 L9,3 z" fill="black"></path></marker>' +
+  '<marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">' +
+  '<path d="M0,0 L0,6 L9,3 z" fill="blue"></path></marker>' +
+  '<marker id="arrowGray" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">' +
+  '<path d="M0,0 L0,6 L9,3 z" fill="#64748b"></path></marker>';
+  svg.appendChild(defs);
+}
+
+function drawSketch(){
+  let svg = document.getElementById("sketch");
+  svg.innerHTML = "";
+  addArrowDef(svg);
+
+  let names = Object.keys(points);
+  if(names.length===0) return;
+
+  let virtualPts = [];
+  lines.forEach(function(l){
+    if(l.type==="基線" && points[l.from]){
+      let a = points[l.from];
+      let azDeg = milToDeg(l.azMil);
+      let rad = azDeg * Math.PI / 180;
+      let len = Math.max(20, estimateRange()*0.12);
+      virtualPts.push({ x:a.x + len*Math.sin(rad), y:a.y + len*Math.cos(rad) });
+    }
+  });
+
+  let xs = names.map(n=>points[n].x).concat(virtualPts.map(p=>p.x));
+  let ys = names.map(n=>points[n].y).concat(virtualPts.map(p=>p.y));
+
+  let minX = Math.min.apply(null,xs), maxX = Math.max.apply(null,xs);
+  let minY = Math.min.apply(null,ys), maxY = Math.max.apply(null,ys);
+
+  let baseW = Math.max(1200, 900 * sketchZoom);
+  let baseH = Math.max(800, 650 * sketchZoom);
+  svg.setAttribute("width", baseW);
+  svg.setAttribute("height", baseH);
+
+  let pad = 90;
+  let rangeX = maxX-minX || 1;
+  let rangeY = maxY-minY || 1;
+  let scale = Math.min((baseW-2*pad)/rangeX, (baseH-2*pad)/rangeY) * sketchZoom;
+
+  let cxData = (minX+maxX)/2;
+  let cyData = (minY+maxY)/2;
+
+  function sx(x){return baseW/2 + (x-cxData)*scale;}
+  function sy(y){return baseH/2 - (y-cyData)*scale;}
+
+  auxLines.forEach(function(a){
+    if(!points[a.from] || !points[a.to]) return;
+    let p1 = points[a.from];
+    let p2 = points[a.to];
+    let line = makeSVG("line");
+    line.setAttribute("x1",sx(p1.x));
+    line.setAttribute("y1",sy(p1.y));
+    line.setAttribute("x2",sx(p2.x));
+    line.setAttribute("y2",sy(p2.y));
+    line.setAttribute("stroke","#64748b");
+    line.setAttribute("stroke-width","1.8");
+    line.setAttribute("stroke-dasharray","5 5");
+    line.setAttribute("marker-end","url(#arrowGray)");
+    svg.appendChild(line);
+  });
+
+  lines.forEach(function(l){
+    if(l.type==="測線"){
+      if(!points[l.from] || !points[l.to]) return;
+      let a = points[l.from], b = points[l.to];
+
+      let line = makeSVG("line");
+      line.setAttribute("x1",sx(a.x));
+      line.setAttribute("y1",sy(a.y));
+      line.setAttribute("x2",sx(b.x));
+      line.setAttribute("y2",sy(b.y));
+      line.setAttribute("stroke","black");
+      line.setAttribute("stroke-width","2");
+      line.setAttribute("marker-end","url(#arrowBlack)");
+      svg.appendChild(line);
+    }
+
+    if(l.type==="基線"){
+      if(!points[l.from]) return;
+      let a = points[l.from];
+      let azDeg = milToDeg(l.azMil);
+      let rad = azDeg * Math.PI / 180;
+      let lenPix = 90 * sketchZoom;
+
+      let x1 = sx(a.x);
+      let y1 = sy(a.y);
+      let x2 = x1 + lenPix * Math.sin(rad);
+      let y2 = y1 - lenPix * Math.cos(rad);
+
+      let line = makeSVG("line");
+      line.setAttribute("x1",x1);
+      line.setAttribute("y1",y1);
+      line.setAttribute("x2",x2);
+      line.setAttribute("y2",y2);
+      line.setAttribute("stroke","blue");
+      line.setAttribute("stroke-width","2");
+      line.setAttribute("stroke-dasharray","7 5");
+      line.setAttribute("marker-end","url(#arrowBlue)");
+      svg.appendChild(line);
+
+      let text = makeSVG("text");
+      text.setAttribute("x",x2+8);
+      text.setAttribute("y",y2-8);
+      text.setAttribute("class","baseLabel");
+      text.textContent = l.to;
+      svg.appendChild(text);
+    }
+  });
+
+  let usedLabels = [];
+  names.forEach(function(n,idx){
+    let p = points[n];
+
+    let c = makeSVG("circle");
+    c.setAttribute("cx",sx(p.x));
+    c.setAttribute("cy",sy(p.y));
+    c.setAttribute("r","4");
+    c.setAttribute("fill", n==="Scp" ? "green" : (sourceMap[n]==="已知" ? "orange" : "red"));
+    svg.appendChild(c);
+
+    let pos = smartLabelPosition(sx(p.x), sy(p.y), usedLabels, idx);
+
+    let leader = makeSVG("line");
+    leader.setAttribute("x1",sx(p.x));
+    leader.setAttribute("y1",sy(p.y));
+    leader.setAttribute("x2",pos.x-4);
+    leader.setAttribute("y2",pos.y+4);
+    leader.setAttribute("stroke","#777");
+    leader.setAttribute("stroke-width","1");
+    svg.appendChild(leader);
+
+    let t = makeSVG("text");
+    t.setAttribute("x",pos.x);
+    t.setAttribute("y",pos.y);
+    t.setAttribute("class","labelBox");
+    t.textContent = n;
+    svg.appendChild(t);
+
+    usedLabels.push({x:pos.x,y:pos.y});
+  });
+}
+
+function smartLabelPosition(x,y,used,idx){
+  let offsets = [[12,-12],[18,18],[-45,-12],[-45,20],[12,-32],[-55,-32],[30,35],[-70,35],[55,-5],[-85,-5]];
+  for(let k=0;k<offsets.length;k++){
+    let o = offsets[(idx+k)%offsets.length];
+    let px = x + o[0];
+    let py = y + o[1];
+    let ok = true;
+    used.forEach(function(u){ if(Math.abs(px-u.x)<45 && Math.abs(py-u.y)<18) ok=false; });
+    if(ok) return {x:px,y:py};
+  }
+  return {x:x+12+(idx%5)*18, y:y-12-(idx%5)*16};
+}
+
+function estimateRange(){
+  let names = Object.keys(points);
+  if(names.length===0) return 100;
+  let xs = names.map(n=>points[n].x);
+  let ys = names.map(n=>points[n].y);
+  return Math.max(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys), 100);
+}
+
+function zoomSketch(f){
+  sketchZoom *= f;
+  if(sketchZoom < 0.3) sketchZoom = 0.3;
+  if(sketchZoom > 8) sketchZoom = 8;
+  drawSketch();
+}
+
+function resetZoom(){
+  sketchZoom = 1;
+  drawSketch();
+}
+
+function pathLengthTo(name){
+  let total = 0;
+  let current = name;
+  let guard = 0;
+
+  while(current !== "Scp"){
+    if(parentMap[current] === undefined) return null;
+    total += flatMap[current] || 0;
+    current = parentMap[current];
+    guard++;
+    if(guard > 1000) return null;
+  }
+  return total;
+}
+
+function closureCheck(){
+  let name = document.getElementById("closurePoint").value;
+  let tx = Number(document.getElementById("trueX").value);
+  let ty = Number(document.getElementById("trueY").value);
+
+  if(!points[name]){alert("閉塞點不存在");return;}
+  if(isNaN(tx)||isNaN(ty)){alert("實際座標錯誤");return;}
+
+  let p = points[name];
+  let ex = p.x - tx;
+  let ey = p.y - ty;
+  let radial = Math.sqrt(ex*ex + ey*ey);
+
+  let total = pathLengthTo(name);
+  if(total === null){
+    document.getElementById("closureResult").innerHTML = "無法取得從 Scp 到該點的路徑全長。若該點是已知點而非測線算出，則沒有路徑全長。";
+    return;
+  }
+
+  let precision = radial === 0 ? Infinity : total / radial;
+
+  document.getElementById("closureResult").innerHTML =
+  "<p>徑誤差：<b>"+radial.toFixed(6)+"</b></p>" +
+  "<p>路徑全長：<b>"+total.toFixed(4)+"</b></p>" +
+  "<p>精度比：<b>1 : "+(precision===Infinity?"∞":precision.toFixed(0))+"</b></p>";
+}
+
+rebuildBasePoints();
+refreshSelects();
+addObsRow();
+renderTables();
+drawSketch();
+</script>
+</body>
+</html>
